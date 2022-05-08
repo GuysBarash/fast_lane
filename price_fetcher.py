@@ -86,14 +86,16 @@ if __name__ == '__main__':
         hours = [6, 12]
 
         df = pd.read_csv(save_path)
+        df['Date'] = pd.to_datetime(df['time']).dt.date
+        datacols = list()
         sumdf = None
-        for day in df['Day'].unique():
-            ddf = df[df['Day'].eq(day)]
+        for c_date in df['Date'].unique():
+            ddf = df[df['Date'].eq(c_date)]
             ddf = ddf[ddf['ERR'].isna()]
             if len(ddf['Price'].unique()) <= 1:
                 continue
             else:
-                print(f"For day [{day}], {len(ddf['Price'].unique())} prices found.")
+                print(f"For date [{c_date}], {len(ddf['Price'].unique())} prices found.")
             ddf['time'] = pd.to_datetime(ddf['time'])
             sig = ddf.iloc[0]['time'].strftime('%b-%d-%Y-%A')
             hr = ddf['Hour'].str.split(':', expand=True).astype(int)
@@ -114,9 +116,23 @@ if __name__ == '__main__':
                     sumdf.loc[tidx, sig] = xdf.loc[tidx]
 
             csv_path = os.path.join(info_path, f'{sig}.csv')
+            datacols += [sig]
             ddf.to_csv(csv_path)
             print(f"Export: {csv_path}")
 
         csv_path = os.path.join(info_path, f'summary.csv')
         sumdf.to_csv(csv_path)
+
+        section_aggregate = True
+        if section_aggregate:
+            smooth = sumdf[datacols].rolling(3).mean().ffill().bfill()
+            smoothavg = smooth.mean(axis=1)
+            csv_path = os.path.join(info_path, f'averaged.csv')
+            img_path = os.path.join(info_path, f'averaged.png')
+            smoothavg.to_csv(csv_path, header='Price')
+
+            plt.plot(smoothavg)
+            plt.savefig(img_path)
+            plt.close('all')
+
         print(f"Summary: {csv_path}")

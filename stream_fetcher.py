@@ -1,121 +1,209 @@
+import time
+from tqdm import tqdm
 import m3u8
 import cv2
-import subprocess as sp
+import subprocess
+import multiprocessing
+import matplotlib.pyplot as plt
 import numpy as np
 
+from selenium import webdriver
+from bs4 import BeautifulSoup
+import re
+import requests
+import os
+
+import copy
+
+import numpy as np
+import cv2
+from PIL import ImageGrab, ImageFont, ImageDraw, Image
+
 VIDEO_URL = r'https://5e0da72d486c5.streamlock.net:8443/ayalon/Yosseftal.stream/playlist.m3u8'
-VIDEO_URL = r'https://stream.cawamo.com/4a6658b6-2ac7-4715-b54e-5d6d3b97a191'
+VIDEO_URL_2 = r'https://5e0d15ab12687.streamlock.net/live/BILU.stream/playlist.m3u8'
 FFMPEG_BIN = r"C:\ffmpeg-n4.4-latest-win64-lgpl-4.4\bin\ffmpeg.exe"
 
 from threading import Thread
 import cv2
 
 
-class VideoStreamWidget(object):
-    def __init__(self, src=0):
-        # Create a VideoCapture object
-        self.capture = cv2.VideoCapture(src)
+class Observer:
+    @staticmethod
+    def runner(q, info):
+        x = info['x']
+        y = info['y']
+        w = info['w']
+        h = info['h']
 
-        # Start the thread to read frames from the video stream
-        self.thread = Thread(target=self.update, args=())
-        self.thread.daemon = True
-        self.thread.start()
-
-    def update(self):
-        # Read the next frame from the stream in a different thread
         while True:
-            if self.capture.isOpened():
-                (self.status, self.frame) = self.capture.read()
+            if q.qsize() > 100:
+                time.sleep(2)
+            else:
+                img = ImageGrab.grab(bbox=(x, y, w, h))  # x, y, w, h
+                img_np = np.array(img)
+                img_pil = Image.fromarray(img_np)
+                q.put(img_pil)
+                time.sleep(0.1)
 
-    def show_frame(self):
-        # Display frames in main program
-        if self.status:
-            self.frame = self.maintain_aspect_ratio_resize(self.frame, width=600)
-            cv2.imshow('IP Camera Video Streaming', self.frame)
+    def __init__(self):
+        self.info = dict()
 
-        # Press Q on keyboard to stop recording
-        key = cv2.waitKey(1)
-        if key == ord('q'):
-            self.capture.release()
-            cv2.destroyAllWindows()
-            exit(1)
+        self.p = None
+        self.q = None
+        self.active = False
 
-    # Resizes a image and maintains aspect ratio
-    def maintain_aspect_ratio_resize(self, image, width=None, height=None, inter=cv2.INTER_AREA):
-        # Grab the image size and initialize dimensions
-        dim = None
-        (h, w) = image.shape[:2]
+    def start(self, x=None, y=None, w=None, h=None, capture=False):
 
-        # Return original image if no need to resize
-        if width is None and height is None:
-            return image
+        self.info['x'] = x
+        self.info['y'] = y
+        self.info['w'] = w
+        self.info['h'] = h
 
-        # We are resizing height if width is none
-        if width is None:
-            # Calculate the ratio of the height and construct the dimensions
-            r = height / float(h)
-            dim = (int(w * r), height)
-        # We are resizing width if height is none
-        else:
-            # Calculate the ratio of the 0idth and construct the dimensions
-            r = width / float(w)
-            dim = (width, int(h * r))
+        self.q = multiprocessing.Queue()
+        self.p = multiprocessing.Process(target=Observer.runner, args=(self.q, self.info,))
+        self.p.start()
+        self.active = True
+        print("Started.")
 
-        # Return the resized image
-        return cv2.resize(image, dim, interpolation=inter)
+    def kill(self):
+        self.p.kill()
+        self.p.join()
+
+        self.info = dict()
+        self.p = None
+        self.q = None
+        self.active = False
+        print("Ended.")
+
+    def get(self):
+        if not self.active:
+            raise Exception("Cannot get image. No active thread.")
+
+        return self.q.get()
+
+
+class TrafficLord:
+    def __init__(self):
+        self.prev_frame = None
+        self.curr_frame = None
+
+    def process_image(self, frame):
+        self.prev_frame = self.curr_frame
+        self.curr_frame = frame
+
+        if self.prev_frame is None:
+            return None
+
+        dpath = r"C:\myprojects\fast_lane\carsexample.jpg"
+        img = Image.open(dpath)
+        frame = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2GRAY)
+        self.curr_frame = frame
+
+        blur = cv2.GaussianBlur(self.curr_frame, (5, 5), 0)
+        dilated = cv2.dilate(blur, np.ones((3, 3)))
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+        closing = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, kernel)
+
+        car_cascade_src = 'haarcascade_cas4.xml'
+        car_cascade = cv2.CascadeClassifier(os.path.join(cv2.data.haarcascades,car_cascade_src))
+        cars = car_cascade.detectMultiScale(closing, 1.1, 1)
+
+        for (x, y, w, h) in cars:
+            closing = cv2.rectangle(closing, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
+        plt.imshow(closing)
+        plt.show()
 
 
 if __name__ == '__main__':
-    stream_link = VIDEO_URL
-    video_stream_widget = VideoStreamWidget(stream_link)
-    while True:
-        try:
-            video_stream_widget.show_frame()
-        except Exception as e:
-            print(e)
-            pass
 
-if __name__ == '__main__':
-    ffmpeg_attempt = False
-    if ffmpeg_attempt:
-        pipe = sp.Popen([FFMPEG_BIN, "-i", VIDEO_URL,
-                         "-loglevel", "quiet",  # no text output
-                         "-an",  # disable audio
-                         "-f", "image2pipe",
-                         "-pix_fmt", "bgr24",
-                         "-vcodec", "rawvideo", "-"],
-                        stdin=sp.PIPE, stdout=sp.PIPE)
+    section_record = False
+    if section_record:
+
+        seubsection_define_image_bounds = True
+        if seubsection_define_image_bounds:
+
+            from pynput import mouse
+
+            clicks = 1
+            x, y, w, h = None, None, None, None
+            with mouse.Events() as events:
+                print("Click upper left corner")
+                for event in events:
+                    if type(event) == mouse.Events.Click and event.pressed:
+                        if clicks == 1:
+                            x, y = event.x, event.y
+                            print(f"Click 1: {x}x{y}")
+                            print("Click lower right corner")
+                            clicks += 1
+                            time.sleep(0.3)
+                        elif clicks == 2:
+                            xt, yt = event.x, event.y
+                            print(f"Click 2: {xt}x{yt}")
+                            w, h = xt, yt  # x - xt, y - yt
+                            break
+                    else:
+                        pass
+
+        frame_size = w, h
+        print(f'X = {x}')
+        print(f'Y = {y}')
+        print(f'W = {w}')
+        print(f'H = {h}')
+
+        observer = Observer()
+        observer.start(x, y, frame_size[0], frame_size[1])
+        frames = list()
+        frames_count = 0
+        frames_total = 250
+
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')  # XVID, MP4V DIVX
+        writer = cv2.VideoWriter('output.avi', fourcc, 5, (w - x, h - y), 0)
         while True:
-            raw_image = pipe.stdout.read(432 * 240 * 3)  # read 432*240*3 bytes (= 1 frame)
-            image = np.frombuffer(raw_image, dtype='uint8').reshape(
-                (240, 432, 3))  # np.fromstring(raw_image, dtype='uint8').reshape((240, 432, 3))
-            cv2.imshow("GoPro", image)
-            if cv2.waitKey(5) == 27:
+            img_pil = observer.get()
+            draw = ImageDraw.Draw(img_pil)
+
+            font = ImageFont.truetype("Roboto-Regular.ttf", 50)
+            draw.text((0, 0), f"Frame {frames_count + 1}/{frames_total}", font=font)
+
+            frame = cv2.cvtColor(np.array(img_pil), cv2.COLOR_BGR2GRAY)
+            writer.write(frame)
+
+            cv2.imshow(f"frame (q: {observer.q.qsize()})", frame)
+            frames_count += 1
+            print(frame.mean())
+            print(frame.shape)
+
+            if cv2.waitKey(1) & 0Xff == ord('q'):
                 break
-        cv2.destroyAllWindows()
+            if frames_count > frames_total:
+                break
 
-    geeks_attempt = False
-    if geeks_attempt:
-        # Import Required Module
-        import requests
-        from bs4 import BeautifulSoup
+        observer.kill()
+        writer.release()
 
-        # Web URL
-        Web_url = r'https://stream.cawamo.com/rl/#'
+    section_read_video = True
+    if section_read_video:
+        path = 'output.avi'
+        cap = cv2.VideoCapture(path)
+        count = 0
 
-        # Get URL Content
-        r = requests.get(Web_url)
+        trlrd = TrafficLord()
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        # Parse HTML Code
-        soup = BeautifulSoup(r.content, 'html.parser')
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            trlrd.process_image(frame)
+            cv2.imshow('window-name', frame)
+            count = count + 1
+            if cv2.waitKey(10) & 0xFF == ord('q'):
+                break
 
-        # List of all video tag
-        video_tags = soup.findAll('video')
-        print("Total ", len(video_tags), "videos found")
+        print(f"Viewed {count} frames")
+        cap.release()
+        cv2.destroyAllWindows()  # destroy all opened windows
 
-        if len(video_tags) != 0:
-            for video_tag in video_tags:
-                video_url = video_tag.find("a")['href']
-                print(video_url)
-        else:
-            print("no videos found")
+if __name__ == '__main__':
+    cv2.destroyAllWindows()
