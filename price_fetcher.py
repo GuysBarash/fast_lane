@@ -10,7 +10,6 @@ import time
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-
 def crawl():
     ret = dict()
     ret['ERR'] = None
@@ -64,13 +63,18 @@ if __name__ == '__main__':
         save_rate = 60  # Every 60 seconds
 
         hits = int((sample_days * 24 * 60 * 60) / float(sample_rate))
+
         cols = ['time', 'Day', 'Hour', 'Price', 'ERR']
         df = pd.DataFrame(columns=cols)
+        curr_idx = 0
+        if os.path.exists(save_path):
+            df = pd.read_csv(save_path, index_col=0)
+            curr_idx = df.index[-1] + 1
 
         time_start_time = datetime.now()
         for i in tqdm(range(hits)):
             q = crawl()
-            df.loc[i] = q
+            df.loc[curr_idx] = q
 
             time_passed = (datetime.now() - time_start_time).total_seconds()
             if time_passed > save_rate:
@@ -136,3 +140,6 @@ if __name__ == '__main__':
             plt.close('all')
 
         print(f"Summary: {csv_path}")
+
+
+def get_weather()
