@@ -89,13 +89,13 @@ if __name__ == '__main__':
             formatted = dtime.strftime("%d-%b-%Y %H:%M:%S")
             msg += formatted + '\t'
             msg += f"Price: {q['Price']}\t"
-            print(msg)
+            print(msg, flush=True)
 
             time_passed = (datetime.now() - time_start_time).total_seconds()
             if time_passed > save_rate:
                 time_start_time = datetime.now()
                 df.to_csv(save_path)
-                print(f'File saved. Path: {save_path}\tItems: {df.shape[0]}')
+                print(f'File saved. Path: {save_path}\tItems: {df.shape[0]}', flush=True)
 
             time.sleep(sample_rate)
 
@@ -137,7 +137,7 @@ if __name__ == '__main__':
             csv_path = os.path.join(info_path, f'{sig}.csv')
             datacols += [sig]
             ddf.to_csv(csv_path)
-            print(f"Export: {csv_path}")
+            print(f"Export: {csv_path}", flush=True)
 
         csv_path = os.path.join(info_path, f'summary.csv')
         sumdf.to_csv(csv_path)
