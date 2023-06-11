@@ -9,6 +9,12 @@ import time
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import certifi
+
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 def crawl():
     ret = dict()
@@ -21,7 +27,7 @@ def crawl():
 
     try:
         url = r'https://fastlane.co.il/'
-        page = requests.get(url)
+        page = requests.get(url, verify=False)
         soup = BeautifulSoup(page.content, 'html.parser')
 
         mydivs = soup.find_all("span", {"class": "price"})
@@ -56,11 +62,11 @@ if __name__ == '__main__':
     save_path = os.path.join(datapath, 'prices.csv')
     info_path = os.path.join(datapath, 'info')
 
-    section_crawl = False
+    section_crawl = True
     if section_crawl:
-        sample_rate = 1
+        sample_rate = 30  # Every 30 seconds
         sample_days = 21
-        save_rate = 60  # Every 60 seconds
+        save_rate = 180  # Every 60 seconds
 
         hits = int((sample_days * 24 * 60 * 60) / float(sample_rate))
 
@@ -72,9 +78,18 @@ if __name__ == '__main__':
             curr_idx = df.index[-1] + 1
 
         time_start_time = datetime.now()
-        for i in tqdm(range(hits)):
+        for i in range(hits):
             q = crawl()
             df.loc[curr_idx] = q
+
+            # Print
+            msg = ''
+            msg += f'[{i + 1} / {hits}][{100 * (i + 1) / hits:>.2f}%]\t'
+            dtime = q['time']
+            formatted = dtime.strftime("%d-%b-%Y %H:%M:%S")
+            msg += formatted + '\t'
+            msg += f"Price: {q['Price']}\t"
+            print(msg)
 
             time_passed = (datetime.now() - time_start_time).total_seconds()
             if time_passed > save_rate:
@@ -140,6 +155,3 @@ if __name__ == '__main__':
             plt.close('all')
 
         print(f"Summary: {csv_path}")
-
-
-def get_weather()
