@@ -64,9 +64,9 @@ if __name__ == '__main__':
 
     section_crawl = True
     if section_crawl:
-        sample_rate = 30  # Every 30 seconds
+        sample_rate = 2  # Every 30 seconds
         sample_days = 21
-        save_rate = 180  # Every 60 seconds
+        save_rate = 30  # Every 60 seconds
 
         hits = int((sample_days * 24 * 60 * 60) / float(sample_rate))
 
@@ -81,8 +81,8 @@ if __name__ == '__main__':
         for i in range(hits):
             q = crawl()
             df.loc[curr_idx] = q
+            curr_idx += 1
 
-            # Print
             msg = ''
             msg += f'[{i + 1} / {hits}][{100 * (i + 1) / hits:>.2f}%]\t'
             dtime = q['time']
